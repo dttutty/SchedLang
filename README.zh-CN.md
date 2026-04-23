@@ -98,6 +98,9 @@ slot-scheduler/
 ├── pyproject.toml
 ├── README.md
 ├── README.zh-CN.md
+├── scripts/
+│   ├── watch_inventory
+│   └── watch_inventory.py
 ├── examples/
 │   ├── inventory.leap2.yaml
 │   ├── inventory.mixed.yaml
@@ -222,6 +225,41 @@ uv run slot-scheduler run \
 ```
 
 如果你的 SSH 机器已经通过 `~/.ssh/config` 和 key-based login 打通了，就不需要额外配置密码环境变量。
+
+## 观察工具
+
+这个 repo 还自带了一个按 inventory 观察 GPU 状态的辅助脚本：
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.txstate-ssh.yaml --once
+```
+
+如果想持续刷新：
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.txstate-ssh.yaml -n 2
+```
+
+如果某些 inventory 主机仍然走密码 SSH，可以导出一个兜底密码，或者运行时提示输入一次：
+
+```bash
+export SLOT_SCHEDULER_WATCH_SSH_PASS='your-password'
+./scripts/watch_inventory --inventory examples/inventory.leap2.yaml --once
+```
+
+或者：
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.leap2.yaml --askpass --once
+```
+
+这个观察工具会：
+
+- 从 inventory 中读取去重后的 hosts
+- 如果某台机器被拆成多个按 GPU 的 slots，会只显示这些声明过的 GPU
+- 用 `run_root` 或 `workdir` 展示对应的磁盘路径
+- 如果本机有 `sinfo` / `squeue`，就一起显示 Slurm 节点状态和排队用户
+- 如果没有 Slurm 元数据，也能退化成纯 SSH 探测
 
 ## 状态文件
 

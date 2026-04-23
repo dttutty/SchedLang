@@ -91,6 +91,9 @@ The value proposition is narrower: make it easy to keep a small fleet of heterog
 slot-scheduler/
 ├── pyproject.toml
 ├── README.md
+├── scripts/
+│   ├── watch_inventory
+│   └── watch_inventory.py
 ├── examples/
 │   ├── inventory.leap2.yaml
 │   ├── inventory.mixed.yaml
@@ -215,6 +218,41 @@ uv run slot-scheduler run \
 ```
 
 If your SSH hosts already use key-based login through `~/.ssh/config`, no password environment variable is required.
+
+## Watch Tool
+
+This repo also ships a helper watch script for inventory-based GPU monitoring:
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.txstate-ssh.yaml --once
+```
+
+For continuously refreshing output:
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.txstate-ssh.yaml -n 2
+```
+
+If some inventory hosts still use password-based SSH, export a fallback password or prompt once:
+
+```bash
+export SLOT_SCHEDULER_WATCH_SSH_PASS='your-password'
+./scripts/watch_inventory --inventory examples/inventory.leap2.yaml --once
+```
+
+or:
+
+```bash
+./scripts/watch_inventory --inventory examples/inventory.leap2.yaml --askpass --once
+```
+
+The watch tool:
+
+- reads unique hosts from the inventory
+- honors declared GPU indices when a host is split into per-GPU slots
+- uses `run_root` or `workdir` to show the backing filesystem path
+- shows Slurm node state and queued owners when local `sinfo` / `squeue` are available
+- falls back to plain SSH probing when Slurm metadata is unavailable
 
 ## State Files
 
