@@ -4,6 +4,30 @@
 
 It is designed for the annoying real-world setup where some jobs should go through Slurm, some should go through plain SSH, and some can run locally. Instead of hard-coding all of that inside one project script, this repo keeps the resource inventory, backend logic, and queueing loop separate from your experiment code.
 
+## Positioning
+
+`slot-scheduler` is not trying to compete with full experiment platforms such as ClearML.
+
+ClearML, SkyPilot, Ray-based platforms, and similar systems already do much more than this project:
+
+- experiment tracking
+- artifact and model management
+- dashboards and web UIs
+- pipelines and higher-level orchestration
+- cluster- or cloud-level control planes
+
+This project exists for the narrower case where those systems feel too heavy.
+
+The goal here is:
+
+- no server to deploy
+- no database to manage
+- no required SDK instrumentation in training code
+- no assumption that all compute belongs to one cluster manager
+- plain files, plain YAML, plain shell or Python commands
+
+In other words, `slot-scheduler` is best thought of as a lightweight scheduling layer for messy real-world research compute, not as a full MLOps platform.
+
 ## What It Does
 
 - Treats each runnable resource as a `slot`
@@ -22,6 +46,42 @@ It is designed for the annoying real-world setup where some jobs should go throu
 - No database; state is intentionally plain files
 
 That is deliberate for the first version. The goal is a simple, hackable control plane that you can point at different repos.
+
+## Use This When
+
+`slot-scheduler` is a good fit if you want to:
+
+- keep existing training scripts unchanged
+- schedule plain shell or Python commands
+- mix `local`, `ssh`, and `slurm` resources in one inventory
+- run from inside a normal repo without deploying extra infrastructure
+- keep state transparent and grep-friendly
+- tweak scheduling behavior quickly in code
+
+## Use Something Else When
+
+You should probably use a heavier system if you need:
+
+- experiment tracking, lineage, artifacts, and dashboards
+- multi-user access control and tenancy
+- managed cloud provisioning at scale
+- autoscaling clusters and infrastructure optimization
+- pipelines, workflow graphs, or production-grade orchestration
+- a UI-first workflow for non-programmatic users
+
+For those cases, tools such as ClearML, SkyPilot, Ray ecosystems, Dask, Runhouse, Ansible, or GNU Parallel may be a better starting point depending on the shape of the problem.
+
+## Non-Goals
+
+This repo is intentionally not trying to be:
+
+- a ClearML replacement
+- an experiment tracking system
+- a workflow engine
+- a cloud control plane
+- a distributed runtime
+
+The value proposition is narrower: make it easy to keep a small fleet of heterogeneous machines busy without forcing the rest of your stack to change.
 
 ## Layout
 
