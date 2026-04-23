@@ -3,6 +3,12 @@ defaults:
   password_env: LEAP2_PASSWORD
   poll_seconds: 30
 
+host_policies:
+  # Example: keep one GPU free on the 2-GPU spillover box by allowing
+  # at most half of its slots to be active at once.
+  - host: gpu2-001
+    max_active_fraction: 0.5
+
 slots:
   - name: gpu1-001
     backend: slurm
@@ -55,4 +61,3 @@ slots:
     workdir: /var/tmp/sqp17/code/VLMLP
     run_root: /var/tmp/sqp17/slot-scheduler/runs
     tags: [ssh, spillover]
-

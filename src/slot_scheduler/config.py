@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from .models import BackendKind, InventoryDefaults, JobSpec, SlotSpec
+from .models import BackendKind, HostPolicy, InventoryDefaults, JobSpec, SlotSpec
 
 
 VALID_BACKENDS = {"local", "ssh", "slurm"}
@@ -57,13 +57,39 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return _require_mapping(data, f"{path}")
 
 
-def load_inventory(path: Path) -> tuple[InventoryDefaults, list[SlotSpec]]:
+def _load_host_policies(data: dict[str, Any]) -> dict[str, HostPolicy]:
+    policies: dict[str, HostPolicy] = {}
+    for item in _require_list(data.get("host_policies"), "host_policies"):
+        policy_data = _require_mapping(item, "host_policy")
+        host = str(policy_data["host"])
+        max_active_slots = int(policy_data["max_active_slots"]) if "max_active_slots" in policy_data else None
+        max_active_fraction = float(policy_data["max_active_fraction"]) if "max_active_fraction" in policy_data else None
+
+        if max_active_slots is None and max_active_fraction is None:
+            raise ValueError(f"host policy for {host} must set max_active_slots or max_active_fraction")
+        if max_active_slots is not None and max_active_slots < 1:
+            raise ValueError(f"host policy for {host} must set max_active_slots >= 1")
+        if max_active_fraction is not None and not 0.0 < max_active_fraction <= 1.0:
+            raise ValueError(f"host policy for {host} must set 0 < max_active_fraction <= 1")
+        if host in policies:
+            raise ValueError(f"duplicate host policy for {host}")
+
+        policies[host] = HostPolicy(
+            host=host,
+            max_active_slots=max_active_slots,
+            max_active_fraction=max_active_fraction,
+        )
+    return policies
+
+
+def load_inventory(path: Path) -> tuple[InventoryDefaults, list[SlotSpec], dict[str, HostPolicy]]:
     data = _load_yaml(path)
     defaults_data = _require_mapping(data.get("defaults"), "defaults")
     defaults = InventoryDefaults(
         password_env=str(defaults_data["password_env"]) if "password_env" in defaults_data else None,
         poll_seconds=int(defaults_data.get("poll_seconds", 20)),
     )
+    host_policies = _load_host_policies(data)
 
     slots: list[SlotSpec] = []
     for item in _require_list(data.get("slots"), "slots"):
@@ -94,7 +120,7 @@ def load_inventory(path: Path) -> tuple[InventoryDefaults, list[SlotSpec]]:
                 ssh_options=_string_tuple(slot_data.get("ssh_options"), "slot.ssh_options"),
             )
         )
-    return defaults, slots
+    return defaults, slots, host_policies
 
 
 def load_jobs(path: Path) -> list[JobSpec]:
@@ -119,4 +145,3 @@ def load_jobs(path: Path) -> list[JobSpec]:
             )
         )
     return jobs
-

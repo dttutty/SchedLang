@@ -3,16 +3,80 @@
 defaults:
   poll_seconds: 20
 
+host_policies:
+  - host: sun
+    max_active_fraction: 0.5
+  - host: moon
+    max_active_fraction: 0.5
+
 slots:
-  - name: sun
+  - name: sun-g0
     backend: ssh
     host: sun
+    gpu: 0
     run_root: /tmp/slot-scheduler/runs
     tags: [ssh, sshkey, txstate]
 
-  - name: moon
+  - name: sun-g1
+    backend: ssh
+    host: sun
+    gpu: 1
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g2
+    backend: ssh
+    host: sun
+    gpu: 2
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g3
+    backend: ssh
+    host: sun
+    gpu: 3
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g4
+    backend: ssh
+    host: sun
+    gpu: 4
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g5
+    backend: ssh
+    host: sun
+    gpu: 5
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g6
+    backend: ssh
+    host: sun
+    gpu: 6
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: sun-g7
+    backend: ssh
+    host: sun
+    gpu: 7
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: moon-g0
     backend: ssh
     host: moon
+    gpu: 0
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: moon-g1
+    backend: ssh
+    host: moon
+    gpu: 1
     run_root: /tmp/slot-scheduler/runs
     tags: [ssh, sshkey, txstate]
 

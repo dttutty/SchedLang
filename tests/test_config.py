@@ -14,6 +14,10 @@ defaults:
   password_env: TEST_PASSWORD
   poll_seconds: 7
 
+host_policies:
+  - host: box
+    max_active_fraction: 0.5
+
 slots:
   - name: local-g0
     backend: local
@@ -43,7 +47,7 @@ jobs:
         encoding="utf-8",
     )
 
-    defaults, slots = load_inventory(inventory_path)
+    defaults, slots, host_policies = load_inventory(inventory_path)
     jobs = load_jobs(jobs_path)
 
     assert defaults.password_env == "TEST_PASSWORD"
@@ -51,9 +55,9 @@ jobs:
     assert [slot.name for slot in slots] == ["local-g0", "ssh-g0"]
     assert slots[1].host == "box"
     assert slots[1].password_env == "SSH_PASS"
+    assert host_policies["box"].max_active_fraction == 0.5
     assert jobs[0].command == ("python", "-c", "print('ok')")
     assert jobs[0].backends == ("local", "ssh")
     assert jobs[0].retries == 2
     assert jobs[1].shell is True
     assert jobs[1].required_tags == ("test",)
-

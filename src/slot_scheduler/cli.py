@@ -33,7 +33,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "run":
-        defaults, slots = load_inventory(args.inventory)
+        defaults, slots, host_policies = load_inventory(args.inventory)
         jobs = load_jobs(args.jobs)
         config = SchedulerConfig(
             run_dir=args.run_dir,
@@ -41,6 +41,7 @@ def main() -> int:
             deadline_hours=args.deadline_hours,
             dry_run=args.dry_run,
             default_password_env=args.default_password_env or defaults.password_env,
+            host_policies=host_policies,
         )
         state_path = run_scheduler(slots, jobs, config)
         print(state_path)
@@ -57,4 +58,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from pathlib import Path
 
-from slot_scheduler.models import JobSpec, PendingJob, SlotSpec
+from slot_scheduler.models import HostPolicy, JobSpec, PendingJob, SlotSpec
 from slot_scheduler.scheduler import SchedulerConfig, job_matches_slot, pop_next_compatible_job, run_scheduler
 from slot_scheduler.state import load_events
 
@@ -49,3 +49,30 @@ def test_scheduler_reports_blocked_jobs_when_no_slot_matches(tmp_path: Path) -> 
 
     events = load_events(state_path)
     assert any(event.get("event") == "blocked" for event in events)
+
+
+def test_scheduler_respects_host_policy_capacity(tmp_path: Path) -> None:
+    slots = [
+        SlotSpec(name="gpu-a", backend="ssh", host="box", gpu=0),
+        SlotSpec(name="gpu-b", backend="ssh", host="box", gpu=1),
+    ]
+    jobs = [
+        JobSpec(name="job-1", command=("echo", "1"), backends=("ssh",)),
+        JobSpec(name="job-2", command=("echo", "2"), backends=("ssh",)),
+    ]
+
+    state_path = run_scheduler(
+        slots,
+        jobs,
+        SchedulerConfig(
+            run_dir=tmp_path / "run",
+            poll_seconds=1,
+            dry_run=True,
+            host_policies={"box": HostPolicy(host="box", max_active_fraction=0.5)},
+        ),
+    )
+
+    events = load_events(state_path)
+    launched_slots = [str(event.get("slot")) for event in events if event.get("event") == "launched"]
+
+    assert launched_slots == ["gpu-a", "gpu-a"]

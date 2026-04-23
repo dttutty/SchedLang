@@ -15,6 +15,13 @@ class InventoryDefaults:
 
 
 @dataclass(frozen=True)
+class HostPolicy:
+    host: str
+    max_active_slots: int | None = None
+    max_active_fraction: float | None = None
+
+
+@dataclass(frozen=True)
 class SlotSpec:
     name: str
     backend: BackendKind
@@ -64,4 +71,3 @@ class ActiveRun:
     process: subprocess.Popen[str] | None = None
     job_id: str | None = None
     session_name: str | None = None
-

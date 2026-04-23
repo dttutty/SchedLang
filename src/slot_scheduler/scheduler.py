@@ -3,12 +3,12 @@ from __future__ import annotations
 import os
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import backends
-from .models import JobSpec, PendingJob, SlotSpec
+from .models import HostPolicy, JobSpec, PendingJob, SlotSpec
 from .state import append_event
 
 
@@ -19,6 +19,7 @@ class SchedulerConfig:
     deadline_hours: float | None = None
     dry_run: bool = False
     default_password_env: str | None = None
+    host_policies: dict[str, HostPolicy] = field(default_factory=dict)
 
 
 def job_matches_slot(job: JobSpec, slot: SlotSpec) -> bool:
@@ -47,12 +48,59 @@ def _resolve_password(slot: SlotSpec, default_password_env: str | None) -> str |
     return os.environ.get(env_name)
 
 
+def _count_slots_per_host(slots: list[SlotSpec]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for slot in slots:
+        if not slot.host:
+            continue
+        counts[slot.host] = counts.get(slot.host, 0) + 1
+    return counts
+
+
+def _count_active_slots_per_host(active: dict[str, backends.ActiveRun]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for run in active.values():
+        if not run.slot.host:
+            continue
+        counts[run.slot.host] = counts.get(run.slot.host, 0) + 1
+    return counts
+
+
+def _host_slot_limit(policy: HostPolicy, total_slots: int) -> int:
+    limits: list[int] = []
+    if policy.max_active_slots is not None:
+        limits.append(policy.max_active_slots)
+    if policy.max_active_fraction is not None:
+        fraction_limit = max(1, int(total_slots * policy.max_active_fraction))
+        limits.append(fraction_limit)
+    if not limits:
+        return total_slots
+    return min(limits)
+
+
+def slot_is_available(
+    slot: SlotSpec,
+    occupied_slots_per_host: dict[str, int],
+    slots_per_host: dict[str, int],
+    host_policies: dict[str, HostPolicy],
+) -> bool:
+    if not slot.host:
+        return True
+    policy = host_policies.get(slot.host)
+    if policy is None:
+        return True
+    total_slots = slots_per_host.get(slot.host, 1)
+    limit = _host_slot_limit(policy, total_slots)
+    return occupied_slots_per_host.get(slot.host, 0) < limit
+
+
 def run_scheduler(slots: list[SlotSpec], jobs: list[JobSpec], config: SchedulerConfig) -> Path:
     run_dir = config.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     state_path = run_dir / "state.jsonl"
     queue: deque[PendingJob] = deque(PendingJob(spec=job) for job in jobs)
     active: dict[str, backends.ActiveRun] = {}
+    slots_per_host = _count_slots_per_host(slots)
     start_time = datetime.now()
     deadline = start_time + timedelta(hours=config.deadline_hours) if config.deadline_hours is not None else None
 
@@ -131,8 +179,11 @@ def run_scheduler(slots: list[SlotSpec], jobs: list[JobSpec], config: SchedulerC
             deadline_logged = True
 
         if can_launch:
+            occupied_slots_per_host = _count_active_slots_per_host(active)
             for slot in slots:
                 if slot.name in active:
+                    continue
+                if not slot_is_available(slot, occupied_slots_per_host, slots_per_host, config.host_policies):
                     continue
                 pending = pop_next_compatible_job(queue, slot)
                 if pending is None:
@@ -176,6 +227,8 @@ def run_scheduler(slots: list[SlotSpec], jobs: list[JobSpec], config: SchedulerC
                     )
                 else:
                     active[slot.name] = launched
+                if slot.host:
+                    occupied_slots_per_host[slot.host] = occupied_slots_per_host.get(slot.host, 0) + 1
                 launched_any = True
 
         if not active and queue and can_launch and not launched_any:
@@ -187,7 +240,7 @@ def run_scheduler(slots: list[SlotSpec], jobs: list[JobSpec], config: SchedulerC
                     "time": datetime.now().isoformat(),
                     "remaining_queue": len(queue),
                     "jobs": blocked,
-                    "reason": "no compatible slots for remaining jobs",
+                    "reason": "no compatible or currently available slots for remaining jobs",
                 },
             )
             break
