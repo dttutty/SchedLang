@@ -157,7 +157,7 @@ slots:
   - name: sun
     backend: ssh
     host: sun
-    run_root: /tmp/slot-scheduler/runs
+    run_root: /home/sqp17/slot-scheduler/runs
     tags: [ssh, sshkey]
 ```
 
