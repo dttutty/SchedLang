@@ -1,0 +1,31 @@
+defaults:
+  poll_seconds: 5
+
+slots:
+  - name: local-g0
+    backend: local
+    gpu: 0
+    workdir: /tmp
+    tags: [local, demo]
+
+  - name: remote-g0
+    backend: ssh
+    host: gpu2-001
+    gpu: 0
+    workdir: /var/tmp/sqp17/demo
+    run_root: /var/tmp/sqp17/slot-scheduler/runs
+    password_env: LEAP2_PASSWORD
+    tags: [ssh, demo]
+
+  - name: slurm-g0
+    backend: slurm
+    host: gpu1-001
+    node: gpu1-001
+    gpu: 0
+    partition: gpu1
+    gres: gpu:1
+    cpus_per_task: 48
+    time_limit: 01:00:00
+    workdir: /mmfs1/home/sqp17/Projects/VLMLP
+    tags: [slurm, demo]
+

@@ -1,0 +1,58 @@
+# Keep only the slots you are actually allowed to use.
+defaults:
+  password_env: LEAP2_PASSWORD
+  poll_seconds: 30
+
+slots:
+  - name: gpu1-001
+    backend: slurm
+    host: gpu1-001
+    node: gpu1-001
+    gpu: 0
+    partition: gpu1
+    gres: gpu:1
+    cpus_per_task: 48
+    time_limit: 24:00:00
+    workdir: /mmfs1/home/sqp17/Projects/VLMLP
+    tags: [a100, leap2]
+
+  - name: gpu1-003
+    backend: slurm
+    host: gpu1-003
+    node: gpu1-003
+    gpu: 0
+    partition: gpu1
+    gres: gpu:1
+    cpus_per_task: 48
+    time_limit: 24:00:00
+    workdir: /mmfs1/home/sqp17/Projects/VLMLP
+    tags: [a100, leap2]
+
+  - name: gpu1-004
+    backend: slurm
+    host: gpu1-004
+    node: gpu1-004
+    gpu: 0
+    partition: gpu1
+    gres: gpu:1
+    cpus_per_task: 48
+    time_limit: 24:00:00
+    workdir: /mmfs1/home/sqp17/Projects/VLMLP
+    tags: [a100, leap2]
+
+  - name: gpu2-001-g0
+    backend: ssh
+    host: gpu2-001
+    gpu: 0
+    workdir: /var/tmp/sqp17/code/VLMLP
+    run_root: /var/tmp/sqp17/slot-scheduler/runs
+    tags: [ssh, spillover]
+
+  - name: gpu2-001-g1
+    backend: ssh
+    host: gpu2-001
+    gpu: 1
+    workdir: /var/tmp/sqp17/code/VLMLP
+    run_root: /var/tmp/sqp17/slot-scheduler/runs
+    tags: [ssh, spillover]
+

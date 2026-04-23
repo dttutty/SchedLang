@@ -1,0 +1,35 @@
+# Example inventory for plain SSH hosts that already support key-based login
+# through ~/.ssh/config aliases.
+defaults:
+  poll_seconds: 20
+
+slots:
+  - name: sun
+    backend: ssh
+    host: sun
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: moon
+    backend: ssh
+    host: moon
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: gauss
+    backend: ssh
+    host: gauss
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: markov
+    backend: ssh
+    host: markov
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]
+
+  - name: cs-234130
+    backend: ssh
+    host: cs-234130
+    run_root: /tmp/slot-scheduler/runs
+    tags: [ssh, sshkey, txstate]

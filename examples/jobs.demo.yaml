@@ -1,0 +1,21 @@
+jobs:
+  - name: local-smoke
+    slots: [local-g0]
+    command: ["bash", "-lc", "echo local-start && hostname && sleep 1 && echo local-done"]
+
+  - name: slurm-smoke
+    backends: [slurm]
+    command: ["bash", "-lc", "echo slurm-start && hostname && sleep 5 && echo slurm-done"]
+
+  - name: ssh-smoke
+    backends: [ssh]
+    env:
+      OMP_NUM_THREADS: "8"
+      MKL_NUM_THREADS: "8"
+    command: ["bash", "-lc", "echo ssh-start && hostname && pwd && sleep 5 && echo ssh-done"]
+
+  - name: demo-any-slot
+    required_tags: [demo]
+    retries: 1
+    command: ["python", "-c", "print('hello from slot-scheduler')"]
+
