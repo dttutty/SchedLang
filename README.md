@@ -243,6 +243,8 @@ The current compiler also understands assignment-style `requires { ... }` and `p
 
 - `requires` are hard constraints; the subset already understood by the runtime is still compiled into legacy `backends`, `required_tags`, and `slots` fields.
 - `prefers` are soft constraints; they are preserved in the compiled YAML as structured metadata for future ranking and explainability work.
+- host-level constraints such as `requires { host = "sun" }` are also preserved and enforced by the current runtime
+- multi-GPU requirements such as `gpu_count = 4` are validated in the compile report, but still need a future multi-slot runtime
 
 Example:
 
@@ -292,7 +294,8 @@ uv run slot-scheduler compile \
   --dsl examples/txstate_vlmlp.sched \
   --inventory-in examples/inventory.txstate-ssh.yaml \
   --inventory-out .runs/compiled-demo/inventory.yaml \
-  --jobs-out .runs/compiled-demo/jobs.yaml
+  --jobs-out .runs/compiled-demo/jobs.yaml \
+  --report-out .runs/compiled-demo/report.yaml
 ```
 
 Then run the scheduler exactly as before:
@@ -310,7 +313,8 @@ Notes:
 - strings should currently use Python-style literals, for example `"ssh"` or `["sun", "moon"]`
 - multiline shell commands work best with triple-quoted strings
 - the compiled YAML remains the source of truth for the actual runtime behavior
-- today the runtime only enforces `backends`, `required_tags`, and `slots`; richer `requirements` and all `preferences` are preserved for future use
+- today the runtime directly enforces `backends`, `required_tags`, `slots`, and host filters from `requirements`
+- `report.yaml` explains candidate slots and flags whether a job is `ready`, `unschedulable`, or currently `needs_multi_slot_runtime`
 
 The reference examples are:
 

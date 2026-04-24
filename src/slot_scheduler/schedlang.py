@@ -423,6 +423,227 @@ def compile_inventory_document(document: SchedlangDocument, base_inventory: dict
     return inventory
 
 
+def _build_inventory_index(inventory: dict[str, Any]) -> dict[str, Any]:
+    raw_slots = inventory.get("slots", []) or []
+    if not isinstance(raw_slots, list):
+        raise ValueError("inventory.slots must be a list")
+
+    slots: list[dict[str, Any]] = []
+    hosts: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    for raw_slot in raw_slots:
+        slot_mapping = _ensure_mapping(raw_slot, "inventory.slot")
+        slot_name = str(slot_mapping["name"])
+        backend = str(slot_mapping["backend"])
+        host = str(slot_mapping.get("host") or slot_mapping.get("node") or slot_name)
+        tags = _ensure_string_list(slot_mapping.get("tags", []), f"inventory.slot {slot_name}.tags")
+        gpu = slot_mapping.get("gpu")
+
+        slot_info = {
+            "name": slot_name,
+            "backend": backend,
+            "host": host,
+            "tags": tags,
+            "gpu": gpu,
+        }
+        slots.append(slot_info)
+
+        host_info = hosts.setdefault(
+            host,
+            {
+                "name": host,
+                "slot_names": [],
+                "gpu_slot_names": [],
+                "backends": set(),
+                "tags": set(),
+            },
+        )
+        host_info["slot_names"].append(slot_name)
+        if gpu is not None:
+            host_info["gpu_slot_names"].append(slot_name)
+        host_info["backends"].add(backend)
+        host_info["tags"].update(tags)
+
+    normalized_hosts: list[dict[str, Any]] = []
+    for host_info in hosts.values():
+        normalized_hosts.append(
+            {
+                "name": host_info["name"],
+                "slot_names": list(host_info["slot_names"]),
+                "gpu_slot_names": list(host_info["gpu_slot_names"]),
+                "slot_count": len(host_info["slot_names"]),
+                "gpu_slot_count": len(host_info["gpu_slot_names"]),
+                "backends": sorted(host_info["backends"]),
+                "tags": sorted(host_info["tags"]),
+            }
+        )
+
+    return {"slots": slots, "hosts": normalized_hosts}
+
+
+def _job_candidates_from_inventory(job: dict[str, Any], inventory: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    candidates = list(inventory["slots"])
+    notes: list[str] = []
+    requirements = _ensure_mapping(job.get("requirements", {}), f"job {job.get('name')}.requirements")
+
+    slot_names = requirements.get("slots") or job.get("slots") or []
+    if slot_names:
+        allowed = {str(name) for name in slot_names}
+        candidates = [slot for slot in candidates if slot["name"] in allowed]
+        notes.append(f"filtered to explicit slots: {sorted(allowed)}")
+
+    backends = requirements.get("backends") or job.get("backends") or []
+    if backends:
+        allowed = {str(name) for name in backends}
+        candidates = [slot for slot in candidates if slot["backend"] in allowed]
+        notes.append(f"filtered to backends: {sorted(allowed)}")
+
+    required_tags = requirements.get("required_tags") or job.get("required_tags") or []
+    if required_tags:
+        allowed = {str(tag) for tag in required_tags}
+        candidates = [slot for slot in candidates if allowed.issubset(set(slot["tags"]))]
+        notes.append(f"requires slot tags: {sorted(allowed)}")
+
+    hosts = requirements.get("hosts") or []
+    if hosts:
+        allowed = {str(host) for host in hosts}
+        candidates = [slot for slot in candidates if slot["host"] in allowed]
+        notes.append(f"filtered to hosts: {sorted(allowed)}")
+
+    return candidates, notes
+
+
+def _preferred_slots_from_candidates(
+    candidates: list[dict[str, Any]],
+    preferences: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    if not candidates or not preferences:
+        return candidates, []
+
+    notes: list[str] = []
+    current = list(candidates)
+
+    hosts = preferences.get("hosts") or []
+    if hosts:
+        allowed = {str(host) for host in hosts}
+        narrowed = [slot for slot in current if slot["host"] in allowed]
+        if narrowed:
+            current = narrowed
+            notes.append(f"preferred hosts matched: {sorted(allowed)}")
+
+    backends = preferences.get("backends") or []
+    if backends:
+        allowed = {str(backend) for backend in backends}
+        narrowed = [slot for slot in current if slot["backend"] in allowed]
+        if narrowed:
+            current = narrowed
+            notes.append(f"preferred backends matched: {sorted(allowed)}")
+
+    preferred_tags = preferences.get("host_tags") or preferences.get("preferred_tags") or []
+    if preferred_tags:
+        allowed = {str(tag) for tag in preferred_tags}
+        narrowed = [slot for slot in current if allowed.issubset(set(slot["tags"]))]
+        if narrowed:
+            current = narrowed
+            notes.append(f"preferred host tags matched: {sorted(allowed)}")
+
+    avoid_host_tags = preferences.get("avoid_host_tags") or []
+    if avoid_host_tags:
+        blocked = {str(tag) for tag in avoid_host_tags}
+        narrowed = [slot for slot in current if not blocked.intersection(set(slot["tags"]))]
+        if narrowed:
+            current = narrowed
+            notes.append(f"avoided host tags when possible: {sorted(blocked)}")
+
+    return current, notes
+
+
+def compile_report_document(jobs_payload: dict[str, Any], inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+    jobs = [_ensure_mapping(item, "compiled job") for item in jobs_payload.get("jobs", []) or []]
+    inventory_index = _build_inventory_index(inventory) if inventory is not None else None
+
+    report_jobs: list[dict[str, Any]] = []
+    status_counts: OrderedDict[str, int] = OrderedDict()
+    for job in jobs:
+        name = str(job["name"])
+        requirements = _ensure_mapping(job.get("requirements", {}), f"job {name}.requirements")
+        preferences = _ensure_mapping(job.get("preferences", {}), f"job {name}.preferences")
+        notes: list[str] = []
+
+        if inventory_index is None:
+            status = "inventory_not_provided"
+            candidate_slots: list[dict[str, Any]] = []
+            preferred_slots: list[dict[str, Any]] = []
+            notes.append("no inventory supplied; skipped placement analysis")
+        else:
+            candidate_slots, candidate_notes = _job_candidates_from_inventory(job, inventory_index)
+            notes.extend(candidate_notes)
+            preferred_slots, preferred_notes = _preferred_slots_from_candidates(candidate_slots, preferences)
+            notes.extend(preferred_notes)
+
+            if not candidate_slots:
+                status = "unschedulable"
+                notes.append("no slot satisfies the current hard constraints")
+            else:
+                gpu_count = int(requirements.get("gpu_count", 1))
+                if gpu_count > 1:
+                    host_counts: OrderedDict[str, int] = OrderedDict()
+                    for slot in candidate_slots:
+                        host_counts[slot["host"]] = host_counts.get(slot["host"], 0) + 1
+                    multi_gpu_hosts = [host for host, count in host_counts.items() if count >= gpu_count]
+                    if not multi_gpu_hosts:
+                        status = "unschedulable"
+                        notes.append(f"requires gpu_count >= {gpu_count}, but no compatible host has enough slots")
+                    else:
+                        status = "needs_multi_slot_runtime"
+                        notes.append(
+                            f"compatible hosts exist for gpu_count={gpu_count}: {sorted(multi_gpu_hosts)}, "
+                            "but the current runtime launches one slot per job"
+                        )
+                else:
+                    status = "ready"
+
+        candidate_slot_names = [slot["name"] for slot in candidate_slots]
+        candidate_hosts = sorted({str(slot["host"]) for slot in candidate_slots})
+        preferred_slot_names = [slot["name"] for slot in preferred_slots]
+        preferred_hosts = sorted({str(slot["host"]) for slot in preferred_slots})
+
+        report_jobs.append(
+            {
+                "name": name,
+                "requirements": requirements,
+                "preferences": preferences,
+                "status": status,
+                "candidate_slots": candidate_slot_names,
+                "candidate_hosts": candidate_hosts,
+                "preferred_slots": preferred_slot_names,
+                "preferred_hosts": preferred_hosts,
+                "notes": notes,
+            }
+        )
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    summary = {
+        "job_count": len(report_jobs),
+        "status_counts": dict(status_counts),
+        "inventory_provided": inventory is not None,
+    }
+    return {"summary": summary, "jobs": report_jobs}
+
+
+def compile_document(document: SchedlangDocument, base_inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+    jobs_payload = compile_jobs_document(document)
+    inventory_payload = compile_inventory_document(document, base_inventory) if base_inventory is not None else None
+    report_payload = compile_report_document(jobs_payload, inventory_payload if inventory_payload is not None else base_inventory)
+
+    payload: dict[str, Any] = {
+        "jobs": jobs_payload,
+        "report": report_payload,
+    }
+    if inventory_payload is not None:
+        payload["inventory"] = inventory_payload
+    return payload
+
+
 def write_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")

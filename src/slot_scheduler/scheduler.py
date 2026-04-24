@@ -23,11 +23,25 @@ class SchedulerConfig:
 
 
 def job_matches_slot(job: JobSpec, slot: SlotSpec) -> bool:
+    requirements = dict(job.requirements)
     if job.slots and slot.name not in job.slots:
         return False
     if job.backends and slot.backend not in job.backends:
         return False
     if job.required_tags and not set(job.required_tags).issubset(set(slot.tags)):
+        return False
+    if requirements.get("slots") and slot.name not in {str(name) for name in requirements["slots"]}:
+        return False
+    if requirements.get("backends") and slot.backend not in {str(name) for name in requirements["backends"]}:
+        return False
+    if requirements.get("required_tags") and not set(str(tag) for tag in requirements["required_tags"]).issubset(set(slot.tags)):
+        return False
+    if requirements.get("hosts"):
+        if slot.host is None or slot.host not in {str(name) for name in requirements["hosts"]}:
+            return False
+    gpu_count = requirements.get("gpu_count")
+    if isinstance(gpu_count, int) and gpu_count > 1:
+        # The current runtime launches at most one slot per job.
         return False
     return True
 

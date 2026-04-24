@@ -250,6 +250,8 @@ uv run slot-scheduler run \
 
 - `requires` 表示硬约束；其中当前 runtime 已经认识的那部分，会继续映射成老的 `backends`、`required_tags`、`slots`
 - `prefers` 表示软偏好；当前先原样保存在编译后的 YAML 里，为后面的 ranking 和 explainability 打基础
+- 像 `requires { host = "sun" }` 这种 host 级限制，也会作为结构化约束保留下来，并且当前 runtime 已经会执行
+- 像 `gpu_count = 4` 这种多卡要求，会在 compile report 里被验证出来，但还需要未来的 multi-slot runtime 才能真正执行
 
 示例：
 
@@ -299,7 +301,8 @@ uv run slot-scheduler compile \
   --dsl examples/txstate_vlmlp.sched \
   --inventory-in examples/inventory.txstate-ssh.yaml \
   --inventory-out .runs/compiled-demo/inventory.yaml \
-  --jobs-out .runs/compiled-demo/jobs.yaml
+  --jobs-out .runs/compiled-demo/jobs.yaml \
+  --report-out .runs/compiled-demo/report.yaml
 ```
 
 然后像平常一样运行 scheduler：
@@ -317,7 +320,8 @@ uv run slot-scheduler run \
 - 现在字符串字面量还是用 Python 风格，比如 `"ssh"`、`["sun", "moon"]`
 - 多行 shell 命令最适合放在三引号字符串里
 - 实际 runtime 的最终事实来源，仍然是编译出来的 YAML
-- 当前 runtime 真正会执行的仍然只有 `backends`、`required_tags`、`slots`；更丰富的 `requirements` 和全部 `preferences` 先作为结构化元数据保留下来
+- 当前 runtime 会直接执行 `backends`、`required_tags`、`slots`，以及 `requirements` 里的 host 过滤
+- `report.yaml` 会额外解释 candidate slots，并标记一个 job 当前是 `ready`、`unschedulable`，还是 `needs_multi_slot_runtime`
 
 参考例子在这里：
 

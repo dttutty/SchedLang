@@ -20,6 +20,21 @@ def test_job_matches_slot_filters_by_backend_and_tags() -> None:
     assert job_matches_slot(JobSpec(name="bad", command=("echo",), backends=("ssh",)), slot) is False
 
 
+def test_job_matches_slot_honors_structured_requirements() -> None:
+    slot = SlotSpec(name="sun-g0", backend="ssh", host="sun", tags=("txstate", "a100"))
+    job = JobSpec(
+        name="demo",
+        command=("echo", "hi"),
+        requirements={"hosts": ["sun"], "backends": ["ssh"], "required_tags": ["txstate"]},
+    )
+    wrong_host = JobSpec(name="bad-host", command=("echo",), requirements={"hosts": ["moon"]})
+    multi_gpu = JobSpec(name="big", command=("echo",), requirements={"gpu_count": 2})
+
+    assert job_matches_slot(job, slot) is True
+    assert job_matches_slot(wrong_host, slot) is False
+    assert job_matches_slot(multi_gpu, slot) is False
+
+
 def test_pop_next_compatible_job_rotates_queue() -> None:
     slot = SlotSpec(name="local-g0", backend="local", tags=("local",))
     queue = deque(

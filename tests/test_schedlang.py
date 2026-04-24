@@ -5,8 +5,10 @@ from pathlib import Path
 import yaml
 
 from slot_scheduler.schedlang import (
+    compile_document,
     compile_inventory_document,
     compile_jobs_document,
+    compile_report_document,
     load_schedlang,
     parse_schedlang,
     write_yaml,
@@ -124,6 +126,68 @@ policy shared_half {
         {"host": "sun", "max_active_fraction": 0.5},
         {"host": "moon", "max_active_fraction": 0.5},
     ]
+
+
+def test_compile_schedlang_report_flags_multi_gpu_runtime_gap() -> None:
+    jobs_payload = {
+        "jobs": [
+            {
+                "name": "large-train",
+                "command": "echo train",
+                "requirements": {
+                    "backends": ["ssh"],
+                    "required_tags": ["txstate"],
+                    "gpu_count": 4,
+                },
+            }
+        ]
+    }
+    inventory = {
+        "slots": [
+            {"name": "sun-g0", "backend": "ssh", "host": "sun", "gpu": 0, "tags": ["txstate"]},
+            {"name": "sun-g1", "backend": "ssh", "host": "sun", "gpu": 1, "tags": ["txstate"]},
+            {"name": "sun-g2", "backend": "ssh", "host": "sun", "gpu": 2, "tags": ["txstate"]},
+            {"name": "sun-g3", "backend": "ssh", "host": "sun", "gpu": 3, "tags": ["txstate"]},
+        ]
+    }
+
+    report = compile_report_document(jobs_payload, inventory)
+
+    assert report["summary"]["status_counts"] == {"needs_multi_slot_runtime": 1}
+    assert report["jobs"][0]["status"] == "needs_multi_slot_runtime"
+    assert report["jobs"][0]["candidate_hosts"] == ["sun"]
+
+
+def test_compile_document_includes_jobs_inventory_and_report() -> None:
+    document = parse_schedlang(
+        """
+policy shared_half {
+  hosts = ["sun"]
+  max_active_fraction = 0.5
+}
+
+experiment smoke {
+  requires {
+    backend = "ssh"
+    host = "sun"
+  }
+  command = "echo smoke"
+}
+        """.strip()
+    )
+    inventory = {
+        "slots": [
+            {"name": "sun-g0", "backend": "ssh", "host": "sun", "gpu": 0, "tags": ["txstate"]},
+            {"name": "moon-g0", "backend": "ssh", "host": "moon", "gpu": 0, "tags": ["txstate"]},
+        ]
+    }
+
+    payload = compile_document(document, inventory)
+
+    assert payload["jobs"]["jobs"][0]["requirements"]["hosts"] == ["sun"]
+    assert payload["inventory"]["host_policies"] == [{"host": "sun", "max_active_fraction": 0.5}]
+    assert payload["report"]["jobs"][0]["candidate_slots"] == ["sun-g0"]
+    assert payload["report"]["jobs"][0]["status"] == "ready"
 
 
 def test_load_schedlang_and_write_yaml(tmp_path: Path) -> None:
