@@ -1,6 +1,8 @@
 pool ssh_demo {
-  backends = ["ssh"]
-  required_tags = ["txstate"]
+  requires {
+    backends = ["ssh"]
+    host_tags = ["txstate"]
+  }
 }
 
 experiment ssh_smoke {
@@ -12,6 +14,13 @@ experiment ssh_smoke {
   env {
     OMP_NUM_THREADS = "8"
     MKL_NUM_THREADS = "8"
+  }
+  requires {
+    gpu_count = 1
+  }
+  prefers {
+    placement = "spread"
+    avoid_host_tags = ["shared"]
   }
   retries = 1
   command = """

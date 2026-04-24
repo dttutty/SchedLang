@@ -234,6 +234,11 @@ uv run slot-scheduler run \
 
 它的目标不是替代现有 YAML runtime，而是作为一个前端，把更抽象的语言编译成现有的 `jobs.yaml`，并在需要时把 host policy 一起落到派生 inventory 文件里。
 
+如果你想看更系统的语言设计草案，可以直接看：
+
+- [docs/schedlang-design.md](docs/schedlang-design.md)
+- [docs/schedlang-design.zh-CN.md](docs/schedlang-design.zh-CN.md)
+
 当前这个 DSL 先支持四个核心概念：
 
 - `pool`：可复用的调度约束，比如 `backends`、`required_tags`、显式 `slots`
@@ -241,12 +246,23 @@ uv run slot-scheduler run \
 - `experiment`：命名实验模板
 - `matrix`：实验变量的笛卡尔展开
 
+当前 compiler 还支持 assignment 风格的 `requires { ... }` 和 `prefers { ... }`：
+
+- `requires` 表示硬约束；其中当前 runtime 已经认识的那部分，会继续映射成老的 `backends`、`required_tags`、`slots`
+- `prefers` 表示软偏好；当前先原样保存在编译后的 YAML 里，为后面的 ranking 和 explainability 打基础
+
 示例：
 
 ```text
 pool txstate_ssh {
-  backends = ["ssh"]
-  required_tags = ["txstate"]
+  requires {
+    backends = ["ssh"]
+    host_tags = ["txstate"]
+  }
+  prefers {
+    placement = "spread"
+    avoid_host_tags = ["shared"]
+  }
 }
 
 policy shared_half {
@@ -260,6 +276,9 @@ experiment vlmlp_followup {
     dataset = ["ETTh2", "ETTm2"]
     pred_len = [96, 192, 336, 720]
     seed = [1, 2]
+  }
+  requires {
+    gpu_count = 1
   }
   env {
     OMP_NUM_THREADS = "8"
@@ -298,6 +317,7 @@ uv run slot-scheduler run \
 - 现在字符串字面量还是用 Python 风格，比如 `"ssh"`、`["sun", "moon"]`
 - 多行 shell 命令最适合放在三引号字符串里
 - 实际 runtime 的最终事实来源，仍然是编译出来的 YAML
+- 当前 runtime 真正会执行的仍然只有 `backends`、`required_tags`、`slots`；更丰富的 `requirements` 和全部 `preferences` 先作为结构化元数据保留下来
 
 参考例子在这里：
 

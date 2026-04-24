@@ -227,6 +227,11 @@ If your SSH hosts already use key-based login through `~/.ssh/config`, no passwo
 
 The goal is not to replace the current YAML runtime. Instead, the DSL acts as a front-end that compiles down to the existing `jobs.yaml`, and can optionally materialize host policies into a derived inventory file.
 
+For a more systematic design sketch, see:
+
+- [docs/schedlang-design.md](docs/schedlang-design.md)
+- [docs/schedlang-design.zh-CN.md](docs/schedlang-design.zh-CN.md)
+
 Today the DSL supports four main ideas:
 
 - `pool`: reusable scheduling constraints such as `backends`, `required_tags`, or explicit `slots`
@@ -234,12 +239,23 @@ Today the DSL supports four main ideas:
 - `experiment`: a named experiment template
 - `matrix`: cartesian expansion over experiment variables
 
+The current compiler also understands assignment-style `requires { ... }` and `prefers { ... }` blocks.
+
+- `requires` are hard constraints; the subset already understood by the runtime is still compiled into legacy `backends`, `required_tags`, and `slots` fields.
+- `prefers` are soft constraints; they are preserved in the compiled YAML as structured metadata for future ranking and explainability work.
+
 Example:
 
 ```text
 pool txstate_ssh {
-  backends = ["ssh"]
-  required_tags = ["txstate"]
+  requires {
+    backends = ["ssh"]
+    host_tags = ["txstate"]
+  }
+  prefers {
+    placement = "spread"
+    avoid_host_tags = ["shared"]
+  }
 }
 
 policy shared_half {
@@ -253,6 +269,9 @@ experiment vlmlp_followup {
     dataset = ["ETTh2", "ETTm2"]
     pred_len = [96, 192, 336, 720]
     seed = [1, 2]
+  }
+  requires {
+    gpu_count = 1
   }
   env {
     OMP_NUM_THREADS = "8"
@@ -291,6 +310,7 @@ Notes:
 - strings should currently use Python-style literals, for example `"ssh"` or `["sun", "moon"]`
 - multiline shell commands work best with triple-quoted strings
 - the compiled YAML remains the source of truth for the actual runtime behavior
+- today the runtime only enforces `backends`, `required_tags`, and `slots`; richer `requirements` and all `preferences` are preserved for future use
 
 The reference examples are:
 

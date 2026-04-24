@@ -30,6 +30,12 @@ def _string_map(value: Any, label: str) -> dict[str, str]:
     return {str(key): str(item) for key, item in data.items()}
 
 
+def _mapping(value: Any, label: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    return dict(_require_mapping(value, label))
+
+
 def _string_tuple(value: Any, label: str) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -142,6 +148,8 @@ def load_jobs(path: Path) -> list[JobSpec]:
                 backends=backends,
                 required_tags=_string_tuple(job_data.get("required_tags"), "job.required_tags"),
                 retries=int(job_data.get("retries", 0)),
+                requirements=_mapping(job_data.get("requirements"), "job.requirements"),
+                preferences=_mapping(job_data.get("preferences"), "job.preferences"),
             )
         )
     return jobs

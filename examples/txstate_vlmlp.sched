@@ -1,6 +1,12 @@
 pool txstate_ssh {
-  backends = ["ssh"]
-  required_tags = ["txstate"]
+  requires {
+    backends = ["ssh"]
+    host_tags = ["txstate"]
+  }
+  prefers {
+    placement = "spread"
+    avoid_host_tags = ["shared"]
+  }
 }
 
 policy shared_half {
@@ -14,6 +20,9 @@ experiment vlmlp_followup {
     dataset = ["ETTh2", "ETTm2"]
     pred_len = [96, 192, 336, 720]
     seed = [1, 2]
+  }
+  requires {
+    gpu_count = 1
   }
   env {
     OMP_NUM_THREADS = "8"

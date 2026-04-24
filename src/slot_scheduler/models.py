@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
+from typing import Any
 from typing import Literal
 
 
@@ -52,6 +53,8 @@ class JobSpec:
     backends: tuple[BackendKind, ...] = ()
     required_tags: tuple[str, ...] = ()
     retries: int = 0
+    requirements: dict[str, Any] = field(default_factory=dict)
+    preferences: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -17,8 +17,10 @@ def test_parse_and_compile_schedlang_jobs() -> None:
     document = parse_schedlang(
         '''
 pool ssh_demo {
-  backends = ["ssh"]
-  required_tags = ["txstate"]
+  requires {
+    backends = ["ssh"]
+    host_tags = ["txstate"]
+  }
 }
 
 experiment smoke {
@@ -29,6 +31,14 @@ experiment smoke {
   }
   env {
     OMP_NUM_THREADS = "8"
+  }
+  requires {
+    gpu_count = 1
+  }
+  prefers {
+    host_tags = ["a100"]
+    avoid_host_tags = ["shared"]
+    placement = "spread"
   }
   retries = 1
   name_template = "job_${dataset}_${pred_len}"
@@ -46,9 +56,54 @@ bash -lc "python run.py ${dataset} ${pred_len}"
     assert jobs[0]["name"] == "job_ETTh2_96"
     assert jobs[0]["backends"] == ["ssh"]
     assert jobs[0]["required_tags"] == ["txstate"]
+    assert jobs[0]["requirements"] == {"backends": ["ssh"], "required_tags": ["txstate"], "gpu_count": 1}
+    assert jobs[0]["preferences"] == {
+        "host_tags": ["a100"],
+        "avoid_host_tags": ["shared"],
+        "placement": "spread",
+    }
     assert jobs[0]["env"]["OMP_NUM_THREADS"] == "8"
     assert jobs[0]["command"] == 'bash -lc "python run.py ETTh2 96"'
     assert jobs[0]["retries"] == 1
+
+
+def test_compile_schedlang_merges_legacy_and_structured_requirements() -> None:
+    document = parse_schedlang(
+        """
+pool ssh_pool {
+  backends = ["ssh"]
+}
+
+experiment large_train {
+  use_pool = "ssh_pool"
+  required_tags = ["txstate"]
+  requires {
+    slots = ["sun-g0", "sun-g1", "sun-g2", "sun-g3"]
+    gpu_count = 4
+  }
+  command = "echo train"
+}
+        """.strip()
+    )
+
+    payload = compile_jobs_document(document)
+    assert payload == {
+        "jobs": [
+            {
+                "name": "large_train",
+                "command": "echo train",
+                "backends": ["ssh"],
+                "required_tags": ["txstate"],
+                "slots": ["sun-g0", "sun-g1", "sun-g2", "sun-g3"],
+                "requirements": {
+                    "backends": ["ssh"],
+                    "required_tags": ["txstate"],
+                    "slots": ["sun-g0", "sun-g1", "sun-g2", "sun-g3"],
+                    "gpu_count": 4,
+                },
+            }
+        ]
+    }
 
 
 def test_compile_schedlang_inventory_overlay() -> None:

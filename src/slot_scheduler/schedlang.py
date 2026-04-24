@@ -179,6 +179,12 @@ def _ensure_optional_string_list(value: Any, label: str) -> list[str] | None:
     return _ensure_string_list(value, label)
 
 
+def _ensure_string_list_like(value: Any, label: str) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    return _ensure_string_list(value, label)
+
+
 def _ensure_int(value: Any, label: str) -> int:
     if not isinstance(value, int):
         raise ValueError(f"{label} must be an integer")
@@ -202,6 +208,16 @@ def _substitute(value: Any, variables: dict[str, Any]) -> Any:
         return [_substitute(item, variables) for item in value]
     if isinstance(value, dict):
         return {str(key): str(_substitute(item, variables)) for key, item in value.items()}
+    return value
+
+
+def _substitute_typed(value: Any, variables: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        return Template(value).safe_substitute({key: str(item) for key, item in variables.items()})
+    if isinstance(value, list):
+        return [_substitute_typed(item, variables) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _substitute_typed(item, variables) for key, item in value.items()}
     return value
 
 
@@ -230,6 +246,64 @@ def _job_name(experiment_name: str, name_template: str | None, variables: dict[s
     return f"{experiment_name}_{suffix}"
 
 
+def _merge_mapping_values(base: Any, override: Any, label: str) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    if base is not None:
+        merged.update(_ensure_mapping(base, f"{label} (base)"))
+    if override is not None:
+        merged.update(_ensure_mapping(override, label))
+    return merged
+
+
+def _normalize_requirements(mapping: dict[str, Any], label: str) -> dict[str, Any]:
+    aliases = {
+        "backend": "backends",
+        "host": "hosts",
+        "slot": "slots",
+        "host_tags": "required_tags",
+        "tags": "required_tags",
+    }
+    list_fields = {"backends", "hosts", "slots", "required_tags"}
+    int_fields = {"gpu_count", "gpu_mem_gb", "cpu_count", "ram_gb"}
+
+    normalized: dict[str, Any] = {}
+    for raw_key, raw_value in mapping.items():
+        key = aliases.get(str(raw_key), str(raw_key))
+        field_label = f"{label}.{raw_key}"
+        if key in list_fields:
+            normalized[key] = _ensure_string_list_like(raw_value, field_label)
+        elif key in int_fields:
+            normalized[key] = _ensure_int(raw_value, field_label)
+        else:
+            supported = sorted(list_fields | int_fields | set(aliases))
+            raise ValueError(f"{label} has unsupported field {raw_key!r}; supported fields are {supported}")
+    return normalized
+
+
+def _normalize_preferences(mapping: dict[str, Any], label: str) -> dict[str, Any]:
+    aliases = {
+        "backend": "backends",
+        "host": "hosts",
+        "slot": "slots",
+        "tags": "host_tags",
+    }
+    list_fields = {"backends", "hosts", "slots", "host_tags", "avoid_host_tags", "preferred_tags"}
+    string_fields = {"placement"}
+
+    normalized: dict[str, Any] = {}
+    for raw_key, raw_value in mapping.items():
+        key = aliases.get(str(raw_key), str(raw_key))
+        field_label = f"{label}.{raw_key}"
+        if key in list_fields:
+            normalized[key] = _ensure_string_list_like(raw_value, field_label)
+        elif key in string_fields:
+            normalized[key] = str(raw_value)
+        else:
+            supported = sorted(list_fields | string_fields | set(aliases))
+            raise ValueError(f"{label} has unsupported field {raw_key!r}; supported fields are {supported}")
+    return normalized
+
+
 def compile_jobs_document(document: SchedlangDocument) -> dict[str, Any]:
     jobs: list[dict[str, Any]] = []
     for experiment in document.experiments:
@@ -244,6 +318,16 @@ def compile_jobs_document(document: SchedlangDocument) -> dict[str, Any]:
 
         merged_fields = dict(pool_fields)
         merged_fields.update(fields)
+        requires_fields = _merge_mapping_values(
+            pool_fields.get("requires"),
+            fields.get("requires"),
+            f"experiment {experiment.name}.requires",
+        )
+        prefers_fields = _merge_mapping_values(
+            pool_fields.get("prefers"),
+            fields.get("prefers"),
+            f"experiment {experiment.name}.prefers",
+        )
 
         matrix = merged_fields.pop("matrix", {})
         if matrix is None:
@@ -256,15 +340,27 @@ def compile_jobs_document(document: SchedlangDocument) -> dict[str, Any]:
         name_template = merged_fields.pop("name_template", None)
         cwd = merged_fields.pop("cwd", None)
         retries = merged_fields.pop("retries", 0)
+        legacy_requirements: dict[str, Any] = {}
         backends = _ensure_optional_string_list(merged_fields.pop("backends", None), f"experiment {experiment.name}.backends")
+        if backends:
+            legacy_requirements["backends"] = list(backends)
         required_tags = _ensure_optional_string_list(
             merged_fields.pop("required_tags", None),
             f"experiment {experiment.name}.required_tags",
         )
+        if required_tags:
+            legacy_requirements["required_tags"] = list(required_tags)
         slots = _ensure_optional_string_list(merged_fields.pop("slots", None), f"experiment {experiment.name}.slots")
+        if slots:
+            legacy_requirements["slots"] = list(slots)
+        merged_fields.pop("requires", None)
+        merged_fields.pop("prefers", None)
         if merged_fields:
             unknown_keys = ", ".join(sorted(merged_fields))
             raise ValueError(f"experiment {experiment.name!r} has unsupported fields: {unknown_keys}")
+        requirements = dict(legacy_requirements)
+        requirements.update(_normalize_requirements(requires_fields, f"experiment {experiment.name}.requires"))
+        preferences = _normalize_preferences(prefers_fields, f"experiment {experiment.name}.prefers")
 
         for variables in _matrix_rows(matrix_mapping):
             job: dict[str, Any] = {
@@ -275,12 +371,16 @@ def compile_jobs_document(document: SchedlangDocument) -> dict[str, Any]:
                 job["env"] = _substitute(env_mapping, variables)
             if cwd is not None:
                 job["cwd"] = _substitute(str(cwd), variables)
-            if backends:
-                job["backends"] = list(backends)
-            if required_tags:
-                job["required_tags"] = list(required_tags)
-            if slots:
-                job["slots"] = list(slots)
+            if requirements.get("backends"):
+                job["backends"] = list(requirements["backends"])
+            if requirements.get("required_tags"):
+                job["required_tags"] = list(requirements["required_tags"])
+            if requirements.get("slots"):
+                job["slots"] = list(requirements["slots"])
+            if requirements:
+                job["requirements"] = _substitute_typed(requirements, variables)
+            if preferences:
+                job["preferences"] = _substitute_typed(preferences, variables)
             retries_int = _ensure_int(retries, f"experiment {experiment.name}.retries")
             if retries_int:
                 job["retries"] = retries_int
